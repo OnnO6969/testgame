@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>深海潛水艇生存挑戰 - 觸控優化版</title>
+    <title>深海潛水艇生存挑戰 - 難度調整版</title>
     <style>
         body, html {
             margin: 0;
@@ -13,7 +13,7 @@
             overflow: hidden;
             background-color: #0000ff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: none; /* 防止移動端瀏覽器默認行為 */
+            touch-action: none;
         }
 
         canvas {
@@ -39,6 +39,14 @@
             margin: 0 10px;
             font-size: 20px;
             font-weight: bold;
+        }
+
+        #speed-boost-notice {
+            color: #ff4d4d;
+            font-size: 16px;
+            display: block;
+            height: 20px;
+            margin-top: 5px;
         }
 
         @media (min-width: 600px) {
@@ -99,6 +107,7 @@
     <div id="ui-layer">
         <div class="stat-box">時間: <span id="timer">0.00</span>s</div>
         <div class="stat-box">炸彈: <span id="bomb-count">0</span></div>
+        <div id="speed-boost-notice"></div>
     </div>
 
     <div id="game-over">
@@ -114,6 +123,7 @@
         const ctx = canvas.getContext('2d');
         const timerElement = document.getElementById('timer');
         const countElement = document.getElementById('bomb-count');
+        const speedNotice = document.getElementById('speed-boost-notice');
         const gameOverScreen = document.getElementById('game-over');
         const finalTimeElement = document.getElementById('final-time');
         const restartBtn = document.getElementById('restart-btn');
@@ -122,11 +132,11 @@
         let startTime = 0;
         let currentTime = 0;
         let lastSpawnInterval = 0;
+        let lastSpeedInterval = 0;
         let bombs = [];
         let mouse = { x: 0, y: 0 };
         let propellerAngle = 0;
         
-        // 潛水艇參數 (放大 50%: 0.7 * 1.5 = 1.05)
         const subScale = 1.05;
         const submarine = {
             halfW: 35 * subScale,
@@ -147,7 +157,6 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // 統一處理位置移動
         function handleInput(clientX, clientY) {
             mouse.x = clientX;
             mouse.y = clientY;
@@ -157,12 +166,10 @@
             }
         }
 
-        // 滑鼠事件
         window.addEventListener('mousemove', (e) => {
             handleInput(e.clientX, e.clientY);
         });
 
-        // 觸控事件
         window.addEventListener('touchstart', (e) => {
             if (e.touches[0]) {
                 handleInput(e.touches[0].clientX, e.touches[0].clientY);
@@ -205,16 +212,18 @@
                 const spread = (Math.random() - 0.5) * 0.8;
                 const finalAngle = angle + spread;
 
-                const speed = 3.0 + Math.random() * 5.0;
-                this.vx = Math.cos(finalAngle) * speed;
-                this.vy = Math.sin(finalAngle) * speed;
+                // 速度減少 60% (原本基礎 3.0+random*5.0 改為 1.2+random*2.0)
+                const baseSpeed = 1.2 + Math.random() * 2.0;
+                this.vx = Math.cos(finalAngle) * baseSpeed;
+                this.vy = Math.sin(finalAngle) * baseSpeed;
                 this.rotation = 0;
                 this.rotSpeed = (Math.random() - 0.5) * 0.1;
             }
 
-            update() {
-                this.x += this.vx;
-                this.y += this.vy;
+            update(speedFactor) {
+                // 應用每 10 秒增加 20% 的速度因子
+                this.x += this.vx * speedFactor;
+                this.y += this.vy * speedFactor;
                 this.rotation += this.rotSpeed;
 
                 const limit = 200;
@@ -261,7 +270,6 @@
 
             const s = subScale * 2.5;
 
-            // 1. 螺旋槳
             ctx.save();
             ctx.translate(-submarine.halfW - 4, 0);
             ctx.rotate(propellerAngle);
@@ -270,7 +278,6 @@
             ctx.restore();
             propellerAngle += 0.3;
 
-            // 2. 尾翼 (配合黃色)
             ctx.fillStyle = '#ffcc00';
             ctx.beginPath();
             ctx.moveTo(-submarine.halfW + 5, -5);
@@ -282,7 +289,6 @@
             ctx.lineWidth = 1;
             ctx.stroke();
 
-            // 3. 船身 (黃色)
             ctx.fillStyle = '#ffcc00';
             ctx.beginPath();
             ctx.ellipse(0, 0, submarine.halfW, submarine.halfH, 0, 0, Math.PI * 2);
@@ -291,14 +297,12 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // 4. 指揮塔
             ctx.fillStyle = '#ffcc00';
             ctx.beginPath();
             ctx.roundRect(-5 * s, -submarine.halfH - 12 * subScale, 15 * s, 15 * subScale, 5);
             ctx.fill();
             ctx.stroke();
 
-            // 5. 潛望鏡
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -307,7 +311,6 @@
             ctx.lineTo(10 * s, -submarine.halfH - 25 * subScale);
             ctx.stroke();
 
-            // 6. 側邊圓窗
             ctx.fillStyle = '#00d4ff';
             for (let i = -1; i <= 1; i++) {
                 ctx.beginPath();
@@ -326,8 +329,6 @@
                 const dx = b.x - submarine.x;
                 const dy = b.y - submarine.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
-                
-                // 放大後的碰撞判定 (原本約 26, 放大 1.5 倍後調整為 38)
                 if (dist < 38) { 
                     endGame();
                 }
@@ -338,12 +339,14 @@
             gameState = 'playing';
             startTime = performance.now();
             lastSpawnInterval = 0;
+            lastSpeedInterval = 0;
             bombs = [];
+            speedNotice.innerText = "";
             gameOverScreen.style.display = 'none';
             canvas.style.cursor = 'none';
 
-            // 初始 8 顆炸彈
-            for (let i = 0; i < 8; i++) {
+            // 初始 5 顆炸彈
+            for (let i = 0; i < 5; i++) {
                 bombs.push(new Bomb());
             }
         }
@@ -361,15 +364,25 @@
                 timerElement.innerText = currentTime.toFixed(2);
                 countElement.innerText = bombs.length;
 
+                // 每 3 秒增加 1 顆炸彈
                 const currentInterval = Math.floor(currentTime / 3);
                 if (currentInterval > lastSpawnInterval) {
                     lastSpawnInterval = currentInterval;
                     bombs.push(new Bomb());
-                    bombs.push(new Bomb());
+                }
+
+                // 每 10 秒計算速度倍率 (+20%)
+                const speedStage = Math.floor(currentTime / 10);
+                const speedFactor = 1 + (speedStage * 0.2);
+                
+                if (speedStage > lastSpeedInterval) {
+                    lastSpeedInterval = speedStage;
+                    speedNotice.innerText = `警告：流速加快 ${speedStage * 20}%!`;
+                    setTimeout(() => { speedNotice.innerText = ""; }, 2000);
                 }
 
                 for (let b of bombs) {
-                    b.update();
+                    b.update(speedFactor);
                 }
 
                 checkCollision();
@@ -386,7 +399,6 @@
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // 裝飾氣泡
             ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
             for(let i=0; i<15; i++) {
                 const bx = (Math.sin(currentTime * 0.3 + i) * 50) + (canvas.width * (i/15));
